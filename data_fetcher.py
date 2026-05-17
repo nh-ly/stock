@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-数据获取模块
-提供AkShare数据接口封装和缓存管理
+数据获取模块 - 专业版
+提供全面的金融数据接口封装和缓存管理
+包括：行情、龙虎榜、板块概念、北向资金、财报等专业数据
 """
 
 import akshare as ak
@@ -20,18 +21,19 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'ca
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 class DataFetcher:
-    """数据获取器类"""
+    """专业数据获取器类"""
     
     def __init__(self):
         self.cache_enabled = True
         self.cache_duration = 300  # 缓存5分钟
+        self.long_cache_duration = 3600  # 长缓存1小时
     
     def _get_cache_path(self, key: str) -> str:
         """获取缓存文件路径"""
         hash_key = hashlib.md5(key.encode()).hexdigest()
         return os.path.join(CACHE_DIR, f"{hash_key}.json")
     
-    def _read_cache(self, key: str) -> Optional[Dict]:
+    def _read_cache(self, key: str, long_term: bool = False) -> Optional[Dict]:
         """读取缓存"""
         if not self.cache_enabled:
             return None
@@ -44,7 +46,8 @@ class DataFetcher:
                 
                 # 检查缓存是否过期
                 cache_time = datetime.fromisoformat(cache_data['timestamp'])
-                if (datetime.now() - cache_time).seconds < self.cache_duration:
+                duration = self.long_cache_duration if long_term else self.cache_duration
+                if (datetime.now() - cache_time).seconds < duration:
                     return cache_data['data']
             except:
                 pass
@@ -66,10 +69,12 @@ class DataFetcher:
         except:
             pass
     
+    # ==================== 基础行情数据 ====================
+    
     def get_stock_list(self, market: str = 'all') -> pd.DataFrame:
         """获取股票列表"""
         cache_key = f"stock_list_{market}"
-        cached = self._read_cache(cache_key)
+        cached = self._read_cache(cache_key, long_term=True)
         
         try:
             # 获取A股股票列表
@@ -77,7 +82,6 @@ class DataFetcher:
             
             if df is None or df.empty:
                 if cached is not None:
-                    print("获取股票列表失败，使用缓存")
                     return pd.DataFrame(cached)
                 return pd.DataFrame()
             
@@ -92,13 +96,11 @@ class DataFetcher:
         except Exception as e:
             print(f"获取股票列表失败: {e}")
             if cached is not None:
-                print("使用缓存数据")
                 return pd.DataFrame(cached)
             return pd.DataFrame()
     
     def get_realtime_quote(self, stock_code: str) -> Optional[Dict]:
         """获取实时行情"""
-        # 移除市场前缀
         code = stock_code.replace('sh', '').replace('sz', '')
         cache_key = f"realtime_{code}"
         cached = self._read_cache(cache_key)
@@ -139,10 +141,8 @@ class DataFetcher:
             print(f"获取实时行情失败 {stock_code}: {e}")
             return None
     
-    def get_historical_data(self, stock_code: str, period: str = 'daily', 
-                           adjust: str = 'qfq') -> Optional[pd.DataFrame]:
+    def get_historical_data(self, stock_code: str, period: str = 'daily', adjust: str = 'qfq') -> Optional[pd.DataFrame]:
         """获取历史K线数据"""
-        # 移除市场前缀
         code = stock_code.replace('sh', '').replace('sz', '')
         cache_key = f"history_{code}_{period}_{adjust}"
         cached = self._read_cache(cache_key)
@@ -162,7 +162,7 @@ class DataFetcher:
                 df = ak.stock_zh_a_hist(symbol=code, period='30min', adjust=adjust)
             elif period == '15min':
                 df = ak.stock_zh_a_hist(symbol=code, period='15min', adjust=adjust)
-            else:  # 5min or 1min
+            else:
                 df = ak.stock_zh_a_hist(symbol=code, period='5', adjust=adjust)
             
             if df is not None and not df.empty:
@@ -199,7 +199,7 @@ class DataFetcher:
         try:
             df = ak.stock_zh_a_hist(symbol=code, period='1', adjust='qfq')
             if df is not None and not df.empty:
-                df = df.tail(241)  # 取最近一天的分钟数据
+                df = df.tail(241)
                 df = df.rename(columns={
                     '日期': 'time',
                     '开盘': 'open',
@@ -215,6 +215,8 @@ class DataFetcher:
             print(f"获取分时数据失败 {stock_code}: {e}")
         return None
     
+    # ==================== 资金流向数据 ====================
+    
     def get_capital_flow(self, stock_code: str) -> Optional[Dict]:
         """获取资金流向"""
         code = stock_code.replace('sh', '').replace('sz', '')
@@ -224,7 +226,6 @@ class DataFetcher:
             return cached
         
         try:
-            # 获取主力资金流向
             df = ak.stock_individual_fund_flow(stock=code, market='sh')
             if df is None or df.empty:
                 df = ak.stock_individual_fund_flow(stock=code, market='sz')
@@ -241,7 +242,6 @@ class DataFetcher:
                     'small_net': float(latest.get('小单净流入', 0)),
                 }
                 
-                # 获取5日资金流向
                 five_day = df.tail(5)
                 result['main_net_5day'] = five_day['主力净流入'].sum() if '主力净流入' in five_day.columns else 0
                 
@@ -251,16 +251,188 @@ class DataFetcher:
             print(f"获取资金流向失败 {stock_code}: {e}")
         return {'main_net': 0, 'main_pct': 0, 'main_net_5day': 0}
     
-    def get_stock_profile(self, stock_code: str) -> Optional[Dict]:
-        """获取股票基本面信息"""
-        code = stock_code.replace('sh', '').replace('sz', '')
-        cache_key = f"profile_{code}"
+    def get_market_capital_flow(self) -> Optional[Dict]:
+        """获取市场整体资金流向"""
+        cache_key = "market_capital_flow"
         cached = self._read_cache(cache_key)
         if cached is not None:
             return cached
         
         try:
-            # 获取股票基本信息
+            df = ak.stock_market_fund_flow_em()
+            if df is not None and not df.empty:
+                latest = df.iloc[-1]
+                result = {
+                    'date': str(latest.get('日期', '')),
+                    'main_net': float(latest.get('主力净流入-净额', 0)),
+                    'main_pct': float(latest.get('主力净流入-净占比', 0)),
+                    'super_net': float(latest.get('超大单净流入-净额', 0)),
+                    'super_pct': float(latest.get('超大单净流入-净占比', 0)),
+                    'big_net': float(latest.get('大单净流入-净额', 0)),
+                    'big_pct': float(latest.get('大单净流入-净占比', 0)),
+                    'mid_net': float(latest.get('中单净流入-净额', 0)),
+                    'mid_pct': float(latest.get('中单净流入-净占比', 0)),
+                    'small_net': float(latest.get('小单净流入-净额', 0)),
+                    'small_pct': float(latest.get('小单净流入-净占比', 0)),
+                }
+                self._write_cache(cache_key, result)
+                return result
+        except Exception as e:
+            print(f"获取市场资金流向失败: {e}")
+        return None
+    
+    # ==================== 龙虎榜数据 ====================
+    
+    def get_dragon_tiger_list(self, date: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """获取龙虎榜数据"""
+        if date is None:
+            date = datetime.now().strftime('%Y%m%d')
+        
+        cache_key = f"dragon_tiger_{date}"
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_lhb_detail_em(symbol="当日数据", date=date)
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取龙虎榜失败: {e}")
+        return None
+    
+    def get_stock_dragon_tiger(self, stock_code: str) -> Optional[pd.DataFrame]:
+        """获取个股龙虎榜历史"""
+        code = stock_code.replace('sh', '').replace('sz', '')
+        cache_key = f"stock_dragon_tiger_{code}"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_lhb_detail_em(symbol="历史数据", symbol=code)
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取个股龙虎榜失败: {e}")
+        return None
+    
+    # ==================== 板块概念数据 ====================
+    
+    def get_sector_list(self) -> Optional[pd.DataFrame]:
+        """获取板块列表"""
+        cache_key = "sector_list"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_board_industry_name_em()
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取板块列表失败: {e}")
+        return None
+    
+    def get_sector_quote(self, sector_name: str) -> Optional[pd.DataFrame]:
+        """获取板块行情"""
+        cache_key = f"sector_quote_{sector_name}"
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_board_industry_summary_board_name_em(symbol=sector_name)
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取板块行情失败: {e}")
+        return None
+    
+    def get_sector_stocks(self, sector_name: str) -> Optional[pd.DataFrame]:
+        """获取板块成分股"""
+        cache_key = f"sector_stocks_{sector_name}"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_board_industry_cons_em(symbol=sector_name)
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取板块成分股失败: {e}")
+        return None
+    
+    def get_concept_list(self) -> Optional[pd.DataFrame]:
+        """获取概念板块列表"""
+        cache_key = "concept_list"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_board_concept_name_em()
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取概念列表失败: {e}")
+        return None
+    
+    # ==================== 北向资金数据 ====================
+    
+    def get_northbound_flow(self) -> Optional[pd.DataFrame]:
+        """获取北向资金流向"""
+        cache_key = "northbound_flow"
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_em_hsgt_north_net_flow_in()
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取北向资金失败: {e}")
+        return None
+    
+    def get_northbound_holding(self, stock_code: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """获取北向资金持股"""
+        cache_key = "northbound_holding"
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_em_hsgt_hold_stock_em()
+            if df is not None and not df.empty:
+                if stock_code:
+                    code = stock_code.replace('sh', '').replace('sz', '')
+                    df = df[df['代码'].astype(str).str.contains(code)]
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取北向资金持股失败: {e}")
+        return None
+    
+    # ==================== 基本面和财报数据 ====================
+    
+    def get_stock_profile(self, stock_code: str) -> Optional[Dict]:
+        """获取股票基本面信息"""
+        code = stock_code.replace('sh', '').replace('sz', '')
+        cache_key = f"profile_{code}"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return cached
+        
+        try:
             df = ak.stock_individual_info_em(symbol=code)
             if df is not None and not df.empty:
                 info = dict(zip(df['item'], df['value']))
@@ -281,6 +453,25 @@ class DataFetcher:
             print(f"获取股票基本信息失败 {stock_code}: {e}")
         return {}
     
+    def get_financial_report(self, stock_code: str) -> Optional[pd.DataFrame]:
+        """获取财务报告"""
+        code = stock_code.replace('sh', '').replace('sz', '')
+        cache_key = f"financial_{code}"
+        cached = self._read_cache(cache_key, long_term=True)
+        if cached is not None:
+            return pd.DataFrame(cached)
+        
+        try:
+            df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取财务报告失败: {e}")
+        return None
+    
+    # ==================== 新闻公告 ====================
+    
     def get_news(self, stock_code: str) -> List[Dict]:
         """获取个股新闻公告"""
         code = stock_code.replace('sh', '').replace('sz', '')
@@ -292,11 +483,10 @@ class DataFetcher:
         try:
             news_list = []
             
-            # 获取个股新闻
             try:
                 df = ak.stock_news_em(symbol=code)
                 if df is not None and not df.empty:
-                    for _, row in df.head(10).iterrows():
+                    for _, row in df.head(15).iterrows():
                         news_list.append({
                             'title': str(row.get('新闻标题', '')),
                             'time': str(row.get('发布时间', '')),
@@ -306,11 +496,10 @@ class DataFetcher:
             except:
                 pass
             
-            # 获取个股公告
             try:
                 df = ak.stock_announcement(symbol=code, date='20240101')
                 if df is not None and not df.empty:
-                    for _, row in df.head(5).iterrows():
+                    for _, row in df.head(10).iterrows():
                         news_list.append({
                             'title': str(row.get('公告标题', '')),
                             'time': str(row.get('发布时间', '')),
@@ -325,6 +514,8 @@ class DataFetcher:
         except Exception as e:
             print(f"获取新闻失败 {stock_code}: {e}")
         return []
+    
+    # ==================== 指数和市场概览 ====================
     
     def get_index_data(self, index_code: str = '000001') -> Optional[pd.DataFrame]:
         """获取指数数据"""
@@ -350,29 +541,55 @@ class DataFetcher:
             print(f"获取指数数据失败 {index_code}: {e}")
         return None
     
-    def get_market_heatmap(self) -> Optional[pd.DataFrame]:
-        """获取市场涨跌统计"""
-        cache_key = "market_heatmap"
+    def get_all_index_quotes(self) -> Optional[pd.DataFrame]:
+        """获取所有主要指数行情"""
+        cache_key = "all_index_quotes"
         cached = self._read_cache(cache_key)
         if cached is not None:
             return pd.DataFrame(cached)
         
         try:
+            df = ak.stock_zh_index_spot_em()
+            if df is not None and not df.empty:
+                self._write_cache(cache_key, df.to_dict('records'))
+                return df
+        except Exception as e:
+            print(f"获取指数行情失败: {e}")
+        return None
+    
+    def get_market_heatmap(self) -> Optional[Dict]:
+        """获取市场涨跌统计"""
+        cache_key = "market_heatmap"
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            return cached
+        
+        try:
             df = ak.stock_zh_a_spot_em()
             if df is not None and not df.empty:
-                # 统计涨跌
                 up_count = len(df[df['涨跌幅'] > 0])
                 down_count = len(df[df['涨跌幅'] < 0])
                 flat_count = len(df[df['涨跌幅'] == 0])
+                limit_up = len(df[df['涨跌幅'] >= 9.9])
+                limit_down = len(df[df['涨跌幅'] <= -9.9])
                 
-                result = df[['代码', '名称', '最新价', '涨跌幅']].to_dict('records')
-                result_meta = {'up': up_count, 'down': down_count, 'flat': flat_count, 'total': len(df)}
+                result = {
+                    'up': up_count,
+                    'down': down_count,
+                    'flat': flat_count,
+                    'limit_up': limit_up,
+                    'limit_down': limit_down,
+                    'total': len(df),
+                    'stocks': df[['代码', '名称', '最新价', '涨跌幅', '成交量', '成交额']].to_dict('records')
+                }
                 
                 self._write_cache(cache_key, result)
-                return pd.DataFrame(result)
+                return result
         except Exception as e:
             print(f"获取市场热力图失败: {e}")
         return None
+    
+    # ==================== 缓存管理 ====================
     
     def clear_cache(self):
         """清空缓存"""
