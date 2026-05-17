@@ -36,7 +36,7 @@ st.set_page_config(
 )
 
 # 路径配置
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 WATCHLIST_FILE = os.path.join(DATA_DIR, 'watchlist.json')
 HISTORY_FILE = os.path.join(DATA_DIR, 'search_history.json')
