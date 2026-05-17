@@ -258,6 +258,11 @@ def render_market_analysis():
         if st.button("加入自选", use_container_width=True):
             if st.session_state.current_stock:
                 add_to_watchlist(st.session_state.current_stock, get_stock_name(st.session_state.current_stock))
+            elif search_query:
+                results = search_stocks(search_query)
+                if results:
+                    stock = results[0]
+                    add_to_watchlist(stock['code'], stock['name'])
     
     # 搜索结果
     if search_query:
