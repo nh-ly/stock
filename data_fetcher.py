@@ -311,7 +311,7 @@ class DataFetcher:
             return pd.DataFrame(cached)
         
         try:
-            df = ak.stock_lhb_detail_em(symbol="历史数据", symbol=code)
+            df = ak.stock_lhb_detail_em(symbol="历史数据")
             if df is not None and not df.empty:
                 self._write_cache(cache_key, df.to_dict('records'))
                 return df

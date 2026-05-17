@@ -877,7 +877,7 @@ def render_prediction_records_page():
         with st.expander(f"{pred.get('date')} | {pred.get('stock_name')} | {pred.get('model')} | {pred.get('direction')}", expanded=False):
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.write(f"股票: {pred.get('stock_name')} ({pred.get('stock_code')}")
+                st.write(f"股票: {pred.get('stock_name')} ({pred.get('stock_code')})")
                 st.write(f"模型: {pred.get('model')}")
                 st.write(f"方向: {pred.get('direction')}")
             with col2:
@@ -970,7 +970,7 @@ def render_settings_page():
     # 关于
     with st.expander("ℹ️ 关于系统"):
         st.markdown("""
-        **A股智能行情分析系统 - 专业版 v2.0
+        **A股智能行情分析系统 - 专业版 v2.0**
         
         本系统仅供学习研究使用，不构成任何投资建议。
         
