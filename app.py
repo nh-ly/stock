@@ -250,7 +250,7 @@ def main():
         
         # 快速搜索
         st.markdown("#### 🔍 快速搜索")
-        quick_search = st.text_input("", placeholder="股票代码/名称", key="quick_search")
+        quick_search = st.text_input("搜索", placeholder="股票代码/名称", key="quick_search", label_visibility="hidden")
         if quick_search:
             results = search_stocks(quick_search)
             if results:
