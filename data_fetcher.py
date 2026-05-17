@@ -70,12 +70,16 @@ class DataFetcher:
         """获取股票列表"""
         cache_key = f"stock_list_{market}"
         cached = self._read_cache(cache_key)
-        if cached is not None:
-            return pd.DataFrame(cached)
         
         try:
             # 获取A股股票列表
             df = ak.stock_info_a_code_name()
+            
+            if df is None or df.empty:
+                if cached is not None:
+                    print("获取股票列表失败，使用缓存")
+                    return pd.DataFrame(cached)
+                return pd.DataFrame()
             
             # 过滤ST股和风险警示股
             df = df[~df['name'].str.contains('ST|退市', na=False)]
@@ -87,6 +91,9 @@ class DataFetcher:
             return df
         except Exception as e:
             print(f"获取股票列表失败: {e}")
+            if cached is not None:
+                print("使用缓存数据")
+                return pd.DataFrame(cached)
             return pd.DataFrame()
     
     def get_realtime_quote(self, stock_code: str) -> Optional[Dict]:
