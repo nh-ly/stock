@@ -151,16 +151,22 @@ def search_stocks(query):
     try:
         df = data_fetcher.get_stock_list()
         if df.empty:
+            print("股票列表为空")
             return []
         
         query_upper = query.upper()
+        # 移除可能的前缀以便匹配
+        query_clean = query_upper.replace('SH', '').replace('SZ', '')
         results = []
         
         for _, row in df.iterrows():
             code = str(row.get('code', ''))
             name = str(row.get('name', ''))
             
+            # 同时匹配带前缀和不带前缀的代码
+            code_clean = code.upper().replace('SH', '').replace('SZ', '')
             if (query_upper in code.upper() or 
+                query_clean == code_clean or
                 query_upper in name.upper() or
                 query_upper in ''.join([c[0] for c in name if c.isalpha()]).upper()):
                 results.append({'code': code, 'name': name})
@@ -263,6 +269,10 @@ def render_market_analysis():
                 if results:
                     stock = results[0]
                     add_to_watchlist(stock['code'], stock['name'])
+                else:
+                    st.error(f"未找到股票: {search_query}")
+            else:
+                st.warning("请先输入股票代码或名称")
     
     # 搜索结果
     if search_query:
